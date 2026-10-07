@@ -36,6 +36,7 @@ Run one instance: rooms currently live in that process's memory. Free hosting ca
 ## Rules
 
 - Choose 2–5 players when creating a room (default four); the host can resize the lobby before starting without removing joined players. There are 75 distinct cards: values 1–15 in red, gold, green, blue, and purple.
+- The host can use **Back to lobby** during or after a game. Confirming clears the current cards and scores for everyone, keeps the same room code and seats, and lets the host change the table size or deal a fresh game.
 - Ten rounds. Each player receives as many cards as the round number. The deck is freshly shuffled each round. Trump is chosen randomly and can repeat across rounds.
 - In round 1, your own card is face down until played and everyone else’s unplayed card is visible. Your card ID, color, and value are not sent to your browser before play. Predict and then play the single hidden card using the blind-play button. Normal private hands return in round 2.
 - Players predict tricks in seat order. The first predictor rotates one seat each round, starting with the host in round 1.

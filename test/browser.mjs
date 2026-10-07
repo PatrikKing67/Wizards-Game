@@ -77,6 +77,35 @@ try {
       }
     }
     let state = await clickAction(pages[0], pages[0].getByRole('button', { name: 'Deal the first round' }));
+    await pages[0].getByRole('button', { name: 'Back to lobby' }).click();
+    const lobbyDialog = pages[0].getByRole('dialog', { name: 'Return to the lobby?' });
+    await lobbyDialog.waitFor();
+    await lobbyDialog.getByRole('button', { name: 'Keep playing' }).click();
+    assert.equal(await lobbyDialog.isVisible(), false);
+    assert.equal((await getState(pages[0])).revision, state.revision, 'cancel keeps the game intact');
+    await pages[count - 1].locator('.game-view').waitFor();
+    assert.equal(await pages[count - 1].getByRole('button', { name: 'Back to lobby' }).count(), 0, 'only the host resets a shared game');
+    if (count === 5) await pages[0].setViewportSize({ width: 390, height: 844 });
+    await pages[0].getByRole('button', { name: 'Back to lobby' }).click();
+    if (count === 5) {
+      await pages[0].screenshot({ path: '/tmp/wizards-lobby-confirm-mobile.png', fullPage: true });
+      assert.equal(await pages[0].evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'mobile return button and dialog fit');
+    }
+    state = await clickAction(pages[0], lobbyDialog.getByRole('button', { name: 'Return to lobby', exact: true }));
+    for (let i = 0; i < count; i++) {
+      await pages[i].getByRole('heading', { name: 'Around the table' }).waitFor();
+      const view = await getState(pages[i]);
+      assert.equal(view.code, code);
+      assert.equal(view.you, i);
+      assert.equal(view.phase, 'lobby');
+      assert.equal(view.round, 0);
+      assert.deepEqual(view.hand, []);
+      assert.deepEqual(view.history, []);
+      assert.ok(view.players.every(player => player.score === 0 && player.prediction === null && player.cards === 0));
+    }
+    if (count === 5) await pages[0].setViewportSize({ width: 1360, height: 900 });
+    state = await clickAction(pages[0], pages[0].getByRole('button', { name: 'Deal the first round' }));
+    console.log(`PASS: ${count}-player return to lobby, cancellation, same seats, and fresh restart.`);
     await pages[count - 1].reload();
     await pages[count - 1].locator('.hand-card').first().waitFor();
     assert.equal((await getState(pages[count - 1])).you, count - 1, 'reload should keep the original seat');
@@ -117,6 +146,7 @@ try {
         }
       }
       assert.equal(await pages[count - 1].evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      for (const page of pages) assert.equal(await page.locator('.card-bottom').evaluateAll(numbers => numbers.every(number => getComputedStyle(number).transform === 'none')), true, 'the lower number on every card is upright');
 
       if (round === 4 && count === 5) {
         await pages[0].screenshot({ path: '/tmp/wizards-five-table.png', fullPage: true });
@@ -172,7 +202,7 @@ try {
       assert.deepEqual(state.hand, [{ hidden: true }]);
     }
     await pages[count - 1].getByRole('button', { name: 'How to play' }).click();
-    assert.equal(await pages[count - 1].locator('dialog').isVisible(), true);
+    assert.equal(await pages[count - 1].locator('#rules-dialog').isVisible(), true);
     await pages[count - 1].getByRole('button', { name: 'Close rules' }).click();
     assert.deepEqual(failures, [], 'no uncaught browser errors');
     console.log(`PASS: ${count}-player blind round, privacy, reload, mobile layout, and ${rounds} rounds.`);

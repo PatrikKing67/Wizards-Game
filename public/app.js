@@ -196,7 +196,7 @@ function game() {
     const lead = state.trick[0]?.card.color;
     subtitle = state.blindRound ? `Your card stays face down until you play it. ${names[state.trump]} is trump.` : lead ? `Follow ${names[lead]} if you have it. ${names[state.trump]} is trump.` : `${myTurn ? 'Choose a color to lead.' : 'Waiting for the first card.'} ${names[state.trump]} is trump.`;
   }
-  app.innerHTML = `<section class="game-view"><div class="game-top"><div><span class="eyebrow">ROOM ${state.code}</span><h2>Round ${state.round}<span class="round-total"> / 10</span></h2></div><div class="game-meta"><span class="trump-chip" data-color="${state.trump}"><span>${symbols[state.trump]}</span><span><small>TRUMP COLOR</small>${names[state.trump]}</span></span><button class="text-button" data-copy>Invite →</button></div></div>
+  app.innerHTML = `<section class="game-view"><div class="game-top"><div><span class="eyebrow">ROOM ${state.code}</span><h2>Round ${state.round}<span class="round-total"> / 10</span></h2></div><div class="game-meta"><span class="trump-chip" data-color="${state.trump}"><span>${symbols[state.trump]}</span><span><small>TRUMP COLOR</small>${names[state.trump]}</span></span><button class="text-button" data-copy>Invite →</button>${state.isHost ? `<button class="secondary lobby-return" data-lobby ${pending || !connected ? 'disabled' : ''}>Back to lobby</button>` : ''}</div></div>
     <div class="game-headline"><h3>${title}</h3><p>${subtitle}</p></div>
     ${isSummary ? summary() : `${state.blindRound ? blindReadout() : ''}<div class="play-layout"><div class="table-wrap"><div class="card-table" data-count="${state.playerCount}"><span class="table-watermark">✦<small>WIZARDS</small></span>
       ${state.players.map((_, index) => seatMarkup(index)).join('')}
@@ -224,6 +224,7 @@ function render() {
   app.dataset.pending = String(pending);
   if (state.phase === 'lobby') lobby(); else game();
   document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', copyInvite));
+  document.querySelectorAll('[data-lobby]').forEach(button => button.addEventListener('click', () => document.querySelector('#lobby-dialog').showModal()));
   document.querySelectorAll('[data-action]').forEach(button => button.addEventListener('click', () => action({ type: button.dataset.action })));
   document.querySelectorAll('[data-bid]').forEach(button => button.addEventListener('click', () => action({ type: 'bid', value: Number(button.dataset.bid) })));
   document.querySelectorAll('[data-size]').forEach(button => button.addEventListener('click', () => action({ type: 'set-player-count', value: Number(button.dataset.size) })));
@@ -232,6 +233,11 @@ function render() {
 
 document.querySelector('#rules-open').addEventListener('click', () => document.querySelector('#rules-dialog').showModal());
 document.querySelector('#rules-close').addEventListener('click', () => document.querySelector('#rules-dialog').close());
+document.querySelector('#lobby-cancel').addEventListener('click', () => document.querySelector('#lobby-dialog').close());
+document.querySelector('#lobby-confirm').addEventListener('click', () => {
+  document.querySelector('#lobby-dialog').close();
+  action({ type: 'return-to-lobby' });
+});
 
 async function initialize() {
   try {

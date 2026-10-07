@@ -88,7 +88,14 @@ export function createGameServer({ trickDelay = 2200 } = {}) {
         applyAction(room, player.id, await body(req));
         publish(room);
         if (room.phase === 'trick-end') {
-          const timer = setTimeout(() => { timers.delete(timer); finishTrick(room); publish(room); }, trickDelay);
+          const revision = room.revision;
+          const timer = setTimeout(() => {
+            timers.delete(timer);
+            // A return to the lobby can start another game before this timer fires.
+            if (room.revision !== revision) return;
+            finishTrick(room);
+            publish(room);
+          }, trickDelay);
           timers.add(timer);
         }
         return reply(res, 200, viewFor(room, player.id));
