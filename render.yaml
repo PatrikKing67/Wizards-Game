@@ -1,0 +1,17 @@
+# One Node service serves both the browser app and the multiplayer API.
+# Static-site hosting cannot run this game server.
+services:
+  - type: web
+    name: wizards-game
+    runtime: node
+    plan: free
+    numInstances: 1
+    autoDeployTrigger: off
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "24.19.0"
+      - key: HOST
+        value: "0.0.0.0"

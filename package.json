@@ -1,0 +1,19 @@
+{
+  "name": "wizards-game",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A four-player browser card game of predictions and tricks.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test test/*.test.js",
+    "test:browser": "node test/browser.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}
