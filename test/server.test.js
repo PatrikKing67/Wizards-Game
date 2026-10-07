@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createGameServer } from '../server.js';
 
-async function running(t, { trickDelay = 0 } = {}) {
-  const server = createGameServer({ trickDelay });
+async function running(t) {
+  const server = createGameServer({ trickDelay: 0 });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => server.stop());
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -100,51 +100,4 @@ test('HTTP room creation validates 2–5 players and broadcasts a host’s lobby
     assert.equal(resized.status, 200);
     assert.equal((await api(`/api/rooms/${host.code}/state`, undefined, guest.token)).data.playerCount, 5);
   }
-});
-
-test('returning to the lobby preserves HTTP seats and an old trick timer cannot finish a restarted game', async t => {
-  const scheduled = [];
-  const trickDelay = 98765;
-  const nativeSetTimeout = globalThis.setTimeout;
-  t.mock.method(globalThis, 'setTimeout', (callback, delay, ...args) => {
-    const timer = nativeSetTimeout(callback, delay, ...args);
-    if (delay === trickDelay) {
-      scheduled.push(callback);
-      clearTimeout(timer);
-    }
-    return timer;
-  });
-  const { api } = await running(t, { trickDelay });
-  const { data: host } = await api('/api/rooms', { name: 'Ada', playerCount: 2 });
-  const { data: guest } = await api(`/api/rooms/${host.code}/join`, { name: 'Ben' });
-  const action = async (player, data) => {
-    const result = await api(`/api/rooms/${host.code}/actions`, data, player.token);
-    assert.equal(result.status, 200);
-    return result.data;
-  };
-  async function playFirstRound() {
-    await action(host, { type: 'start' });
-    for (const player of [host, guest]) await action(player, { type: 'bid', value: 0 });
-    for (const player of [host, guest]) await action(player, { type: 'play-blind' });
-  }
-  await playFirstRound();
-  assert.equal(scheduled.length, 1);
-  assert.equal((await api(`/api/rooms/${host.code}/actions`, { type: 'return-to-lobby' }, guest.token)).status, 400);
-  await action(host, { type: 'return-to-lobby' });
-  const lobby = (await api(`/api/rooms/${host.code}/state`, undefined, guest.token)).data;
-  assert.equal(lobby.phase, 'lobby');
-  assert.equal(lobby.you, 1);
-  assert.equal(lobby.players.length, 2);
-  assert.deepEqual(lobby.hand, []);
-  await playFirstRound();
-  assert.equal(scheduled.length, 2);
-  const state = (await api(`/api/rooms/${host.code}/state`, undefined, host.token)).data;
-  assert.equal(state.phase, 'trick-end');
-  scheduled[0]();
-  const afterOldTimer = (await api(`/api/rooms/${host.code}/state`, undefined, host.token)).data;
-  assert.deepEqual(afterOldTimer, state, 'a previous game’s delayed callback must not advance this game');
-  scheduled[1]();
-  const afterCurrentTimer = (await api(`/api/rooms/${host.code}/state`, undefined, host.token)).data;
-  assert.equal(afterCurrentTimer.phase, 'round-end');
-  assert.equal(afterCurrentTimer.history.length, 1);
 });

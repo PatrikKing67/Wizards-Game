@@ -16,10 +16,27 @@ try {
   for (const count of process.env.WIZARDS_BROWSER_COUNTS ? process.env.WIZARDS_BROWSER_COUNTS.split(',').map(Number) : [2, 3, 4, 5]) {
     const pages = [];
     const contexts = [];
+    const liveMessages = new Map();
     for (let i = 0; i < count; i++) {
       const context = await browser.newContext({ viewport: i === count - 1 ? { width: 390, height: 844 } : { width: 1360, height: 900 } });
       contexts.push(context);
       const page = await context.newPage();
+      const recent = [];
+      liveMessages.set(page, recent);
+      const network = await context.newCDPSession(page);
+      await network.send('Network.enable');
+      network.on('Network.eventSourceMessageReceived', event => {
+        const view = JSON.parse(event.data);
+        recent.push({ revision: view.revision, phase: view.phase });
+        if (recent.length > 12) recent.shift();
+      });
+      // Deliver trick-completion HTTP responses after the newer live state.
+      await page.route(/\/api\/rooms\/[A-Z2-9]{6}\/actions$/, async route => {
+        const response = await route.fetch();
+        const view = await response.json();
+        if (view.phase === 'trick-end') await new Promise(resolve => setTimeout(resolve, 120));
+        await route.fulfill({ response });
+      });
       page.on('pageerror', error => failures.push(error.message));
       pages.push(page);
     }
@@ -36,12 +53,16 @@ try {
     const otherSize = count === 5 ? 2 : 5;
     await clickAction(pages[0], pages[0].getByRole('button', { name: `Set table to ${otherSize} players`, exact: true }));
     await clickAction(pages[0], pages[0].getByRole('button', { name: `Set table to ${count} players`, exact: true }));
+    await pages[0].getByRole('button', { name: 'Back to lobby' }).click();
+    await pages[0].getByLabel('YOUR NAME', { exact: true }).waitFor();
     for (let i = 1; i < count; i++) {
       await pages[i].goto(`${base}/?room=${code}`);
       await pages[i].getByLabel('YOUR NAME', { exact: true }).fill(names[i]);
       await pages[i].getByRole('button', { name: 'Join room' }).click();
       await pages[i].getByRole('heading', { name: 'Around the table' }).waitFor();
     }
+    assert.equal(await pages[0].locator('.landing').isVisible(), true, 'live joins must not replace the opening page');
+    await pages[0].getByRole('button', { name: 'Return to game' }).click();
     await pages[0].getByText(`${count} / ${count} seated`).waitFor();
     assert.equal(await pages[count - 1].evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'mobile lobby should fit the screen');
     await pages[0].screenshot({ path: '/tmp/wizards-lobby.png', fullPage: true });
@@ -73,39 +94,32 @@ try {
         })));
         const serverState = await getState(page);
         console.log('Server state:', { turn: serverState.turn, phase: serverState.phase, revision: serverState.revision, round: serverState.round, tricks: serverState.players.map(p => p.tricks) });
+        console.log('Recent live messages:', liveMessages.get(page), 'Browser errors:', failures);
         throw error;
       }
     }
     let state = await clickAction(pages[0], pages[0].getByRole('button', { name: 'Deal the first round' }));
-    await pages[0].getByRole('button', { name: 'Back to lobby' }).click();
-    const lobbyDialog = pages[0].getByRole('dialog', { name: 'Return to the lobby?' });
-    await lobbyDialog.waitFor();
-    await lobbyDialog.getByRole('button', { name: 'Keep playing' }).click();
-    assert.equal(await lobbyDialog.isVisible(), false);
-    assert.equal((await getState(pages[0])).revision, state.revision, 'cancel keeps the game intact');
-    await pages[count - 1].locator('.game-view').waitFor();
-    assert.equal(await pages[count - 1].getByRole('button', { name: 'Back to lobby' }).count(), 0, 'only the host resets a shared game');
-    if (count === 5) await pages[0].setViewportSize({ width: 390, height: 844 });
-    await pages[0].getByRole('button', { name: 'Back to lobby' }).click();
-    if (count === 5) {
-      await pages[0].screenshot({ path: '/tmp/wizards-lobby-confirm-mobile.png', fullPage: true });
-      assert.equal(await pages[0].evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'mobile return button and dialog fit');
+    for (const index of [0, count - 1]) {
+      const page = pages[index];
+      const before = await getState(page);
+      await page.getByRole('button', { name: 'Back to lobby' }).click();
+      await page.getByRole('heading', { name: 'Know your hand. Call your fate.' }).waitFor();
+      assert.equal(await page.getByLabel('YOUR NAME', { exact: true }).isVisible(), true);
+      assert.equal(await page.getByRole('button', { name: 'Create a room' }).isVisible(), true);
+      assert.equal(await page.getByRole('button', { name: 'Join room' }).isVisible(), true);
+      assert.deepEqual(await getState(page), before, 'opening the name page preserves the game');
+      assert.equal(await pages[index === 0 ? count - 1 : 0].locator('.game-view').isVisible(), true, 'other players stay at the table');
+      await page.reload();
+      await page.getByLabel('YOUR NAME', { exact: true }).waitFor();
+      assert.equal(await page.getByLabel('YOUR NAME', { exact: true }).inputValue(), names[index]);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'opening page fits on mobile');
+      if (count === 5 && index === count - 1) await page.screenshot({ path: '/tmp/wizards-lobby-home-mobile.png', fullPage: true });
+      if (index === 0) await page.getByRole('button', { name: 'Return to game' }).click();
+      else await page.getByRole('button', { name: 'Join room' }).click();
+      await page.locator('.hand .card-back').waitFor();
+      assert.deepEqual(await getState(page), before, 'resume restores the original seat and hand');
     }
-    state = await clickAction(pages[0], lobbyDialog.getByRole('button', { name: 'Return to lobby', exact: true }));
-    for (let i = 0; i < count; i++) {
-      await pages[i].getByRole('heading', { name: 'Around the table' }).waitFor();
-      const view = await getState(pages[i]);
-      assert.equal(view.code, code);
-      assert.equal(view.you, i);
-      assert.equal(view.phase, 'lobby');
-      assert.equal(view.round, 0);
-      assert.deepEqual(view.hand, []);
-      assert.deepEqual(view.history, []);
-      assert.ok(view.players.every(player => player.score === 0 && player.prediction === null && player.cards === 0));
-    }
-    if (count === 5) await pages[0].setViewportSize({ width: 1360, height: 900 });
-    state = await clickAction(pages[0], pages[0].getByRole('button', { name: 'Deal the first round' }));
-    console.log(`PASS: ${count}-player return to lobby, cancellation, same seats, and fresh restart.`);
+    console.log(`PASS: ${count}-player back to name page, reload, preserved game, and seat recovery.`);
     await pages[count - 1].reload();
     await pages[count - 1].locator('.hand-card').first().waitFor();
     assert.equal((await getState(pages[count - 1])).you, count - 1, 'reload should keep the original seat');
@@ -160,8 +174,10 @@ try {
         state = await clickAction(page, page.locator('[data-bid="0"]'));
       }
       for (let trick = 0; trick < round; trick++) {
+        let lastActor;
         for (let i = 0; i < count; i++) {
           const page = pages[state.turn];
+          lastActor = page;
           const privateState = await getState(page);
           if (round === 1) {
             assert.equal(privateState.canPlayBlind, true);
@@ -182,6 +198,8 @@ try {
           assert.ok(Date.now() < deadline, `Round ${round}, trick ${trick + 1} did not complete; phase ${state.phase}`);
           await new Promise(resolve => setTimeout(resolve, 20));
         }
+        await lastActor.waitForFunction(() => document.querySelector('#app').dataset.pending === 'false');
+        assert.ok(Number(await lastActor.locator('#app').getAttribute('data-revision')) >= state.revision, 'a delayed action response must preserve the newer live turn');
       }
       assert.equal(state.phase, round === 10 ? 'finished' : 'round-end');
       assert.equal(state.history.length, round);
@@ -206,6 +224,22 @@ try {
     await pages[count - 1].getByRole('button', { name: 'Close rules' }).click();
     assert.deepEqual(failures, [], 'no uncaught browser errors');
     console.log(`PASS: ${count}-player blind round, privacy, reload, mobile layout, and ${rounds} rounds.`);
+    const previousRoom = await getState(pages[count - 1]);
+    await pages[0].getByRole('link', { name: 'Wizards home' }).click();
+    await pages[0].getByLabel('YOUR NAME', { exact: true }).fill('New host');
+    await pages[0].getByLabel('PLAYERS AT YOUR TABLE').selectOption('2');
+    await pages[0].getByRole('button', { name: 'Create a room' }).click();
+    await pages[0].getByRole('heading', { name: 'Around the table' }).waitFor();
+    const newCode = await pages[0].locator('.room-code-box strong').textContent();
+    assert.notEqual(newCode, code);
+    assert.deepEqual(await getState(pages[count - 1]), previousRoom, 'creating a new table preserves the previous room');
+    await pages[count - 1].getByRole('button', { name: 'Back to lobby' }).click();
+    await pages[count - 1].getByLabel('YOUR NAME', { exact: true }).fill('New guest');
+    await pages[count - 1].getByLabel('ROOM CODE', { exact: true }).fill(newCode);
+    await pages[count - 1].getByRole('button', { name: 'Join room' }).click();
+    await pages[count - 1].getByRole('heading', { name: 'Around the table' }).waitFor();
+    assert.equal((await getState(pages[count - 1])).code, newCode);
+    console.log('PASS: opening page can create another room and join a different room.');
     for (const context of contexts) await context.close();
   }
   assert.deepEqual(failures, []);

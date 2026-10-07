@@ -29,8 +29,15 @@ export async function verifyEmbeddedGame(browser, gameUrl) {
     await gameFrame.goto(gameFrame.url());
     await frame.getByRole('heading', { name: 'Around the table' }).waitFor();
     assert.equal(await frame.locator('.room-code-box strong').textContent(), code);
+    await frame.getByRole('button', { name: 'Back to lobby' }).click();
+    await frame.getByLabel('YOUR NAME', { exact: true }).waitFor();
+    await gameFrame.goto(gameFrame.url());
+    await frame.getByLabel('YOUR NAME', { exact: true }).waitFor();
+    await frame.getByRole('button', { name: 'Return to game' }).click();
+    await frame.getByRole('heading', { name: 'Around the table' }).waitFor();
+    assert.equal(await frame.locator('.room-code-box strong').textContent(), code);
     assert.deepEqual(errors, []);
-    console.log('PASS: cross-site sandboxed iframe loads, creates a room, receives live updates, and reconnects after reloading the game frame.');
+    console.log('PASS: cross-site sandboxed iframe creates a room, opens the name page, reloads, and resumes its seat.');
   } catch (error) {
     await page?.screenshot({ path: '/tmp/wizards-embed-error.png', fullPage: true });
     throw new Error(`${error.message}\nBrowser errors: ${JSON.stringify(errors)}`);

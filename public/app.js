@@ -35,7 +35,25 @@ function rememberSeat(currentSeat) {
 
 function forgetSeat() {
   try { sessionStorage.removeItem('wizards-seat'); } catch { /* Storage is optional. */ }
-  history.replaceState({}, '', location.pathname + location.search);
+  history.replaceState({}, '', location.pathname);
+}
+
+function backToLobby() {
+  if (pending) return;
+  if (seat && state) {
+    seat = { ...seat, name: state.players[state.you].name };
+    rememberSeat(seat);
+  }
+  events?.close();
+  events = null;
+  state = null;
+  connected = false;
+  connection.textContent = 'Ready to play';
+  connection.classList.remove('live');
+  const url = new URL(location.href);
+  url.searchParams.set('lobby', '1');
+  history.replaceState({}, '', url.pathname + url.search + url.hash);
+  landing();
 }
 
 function notify(message, error = false) {
@@ -74,7 +92,8 @@ function landing() {
       <div class="hero-stats"><div><strong>75</strong><span>CARDS</span></div><div><strong>5</strong><span>COLORS</span></div><div><strong>10</strong><span>ROUNDS</span></div></div>
     </div>
     <section class="entry-panel"><span class="eyebrow">TAKE YOUR SEAT</span><h2>The table awaits.</h2><p>Bring your friends. A good prediction starts with good company.</p>
-      <form id="create-form"><label for="player-name">YOUR NAME</label><input id="player-name" name="name" maxlength="24" placeholder="What shall we call you?" autocomplete="nickname" required><label class="player-count-label" for="player-count">PLAYERS AT YOUR TABLE</label><select id="player-count" name="playerCount">${[2, 3, 4, 5].map(n => `<option value="${n}" ${n === 4 ? 'selected' : ''}>${n} players</option>`).join('')}</select><button class="primary" type="submit">Create a room <span>→</span></button></form>
+      ${seat ? `<div class="resume-panel"><div><span class="eyebrow">YOUR SAVED TABLE</span><strong>Room ${escape(seat.code)}</strong></div><button id="resume-game" class="secondary">Return to game →</button></div>` : ''}
+      <form id="create-form"><label for="player-name">YOUR NAME</label><input id="player-name" name="name" maxlength="24" placeholder="What shall we call you?" value="${escape(seat?.name ?? '')}" autocomplete="nickname" required><label class="player-count-label" for="player-count">PLAYERS AT YOUR TABLE</label><select id="player-count" name="playerCount">${[2, 3, 4, 5].map(n => `<option value="${n}" ${n === 4 ? 'selected' : ''}>${n} players</option>`).join('')}</select><button class="primary" type="submit">Create a room <span>→</span></button></form>
       <div class="divider"><span>OR JOIN YOUR FRIENDS</span></div>
       <form id="join-form"><label for="room-code">ROOM CODE</label><div class="join-row"><input id="room-code" name="code" maxlength="6" minlength="6" pattern="[A-Za-z2-9]{6}" placeholder="ABC123" value="${escape(invitedCode)}" autocomplete="off" required><button class="secondary" type="submit">Join room →</button></div></form>
       <div class="entry-foot"><span>✧</span> No account. Just cards and company.</div>
@@ -83,14 +102,38 @@ function landing() {
   document.querySelector('#create-form').addEventListener('submit', event => { event.preventDefault(); enter(false); });
   document.querySelector('#join-form').addEventListener('submit', event => { event.preventDefault(); enter(true); });
   document.querySelector('#room-code').addEventListener('input', event => { event.target.value = event.target.value.toUpperCase(); });
+  document.querySelector('#resume-game')?.addEventListener('click', resumeGame);
+}
+
+async function resumeGame() {
+  if (pending || !seat) return;
+  pending = true;
+  document.querySelectorAll('.entry-panel button').forEach(button => { button.disabled = true; });
+  try {
+    state = await request(`/api/rooms/${seat.code}/state`);
+    rememberSeat(seat);
+    subscribe();
+  } catch (error) {
+    forgetSeat();
+    seat = null;
+    state = null;
+    landing();
+    notify(error.message, true);
+  } finally {
+    pending = false;
+    if (state) render();
+    else document.querySelectorAll('.entry-panel button').forEach(button => { button.disabled = false; });
+  }
 }
 
 async function enter(join) {
   const nameInput = document.querySelector('#player-name');
-  if (!nameInput.reportValidity() || pending) return;
+  if (pending) return;
   const code = document.querySelector('#room-code').value.trim().toUpperCase();
+  if (join && seat?.code === code) return resumeGame();
+  if (!nameInput.reportValidity()) return;
   pending = true;
-  document.querySelectorAll('form button').forEach(button => { button.disabled = true; });
+  document.querySelectorAll('.entry-panel button').forEach(button => { button.disabled = true; });
   try {
     const result = await request(join ? `/api/rooms/${code}/join` : '/api/rooms', { name: nameInput.value.trim(), ...(!join ? { playerCount: Number(document.querySelector('#player-count').value) } : {}) });
     seat = { code: result.code, token: result.token };
@@ -101,7 +144,7 @@ async function enter(join) {
   finally {
     pending = false;
     if (state) render();
-    else document.querySelectorAll('form button').forEach(button => { button.disabled = false; });
+    else document.querySelectorAll('.entry-panel button').forEach(button => { button.disabled = false; });
   }
 }
 
@@ -110,15 +153,18 @@ function subscribe() {
   connected = false;
   connection.textContent = 'Connecting…';
   connection.classList.remove('live');
-  events = new EventSource(`/api/rooms/${seat.code}/events?token=${encodeURIComponent(seat.token)}`);
-  events.onmessage = event => {
+  const stream = new EventSource(`/api/rooms/${seat.code}/events?token=${encodeURIComponent(seat.token)}`);
+  events = stream;
+  stream.onmessage = event => {
+    if (events !== stream) return;
     state = latestState(state, JSON.parse(event.data));
     connected = true;
     connection.textContent = 'Table connected';
     connection.classList.add('live');
     render();
   };
-  events.onerror = () => {
+  stream.onerror = () => {
+    if (events !== stream) return;
     connected = false;
     connection.textContent = 'Reconnecting…';
     connection.classList.remove('live');
@@ -130,7 +176,10 @@ async function action(data) {
   if (pending || !connected) return;
   pending = true;
   render();
-  try { state = latestState(state, await request(`/api/rooms/${seat.code}/actions`, data)); }
+  try {
+    const result = await request(`/api/rooms/${seat.code}/actions`, data);
+    state = latestState(state, result);
+  }
   catch (error) { notify(error.message, true); }
   finally { pending = false; render(); }
 }
@@ -142,7 +191,7 @@ async function copyInvite() {
 }
 
 function lobby() {
-  app.innerHTML = `<section class="lobby-view"><div class="lobby-intro"><span class="eyebrow">YOUR PRIVATE TABLE</span><h1>A place for<br>${state.playerCount} <em>wizards.</em></h1><p>Share your room code or invite link.<br>Once everyone is seated, the host can deal.</p><div class="room-code-box"><span class="eyebrow">ROOM CODE</span><strong>${state.code}</strong><button class="secondary" data-copy>Copy invite →</button></div><p class="subtle">${location.hash.includes('seat=') ? 'Keep this preview open to hold your seat. Refreshing the containing page may reset it.' : 'Keep this tab to hold your seat. Refreshing will reconnect you.'}</p></div>
+  app.innerHTML = `<section class="lobby-view"><div class="lobby-intro"><span class="eyebrow">YOUR PRIVATE TABLE</span><h1>A place for<br>${state.playerCount} <em>wizards.</em></h1><p>Share your room code or invite link.<br>Once everyone is seated, the host can deal.</p><div class="room-code-box"><span class="eyebrow">ROOM CODE</span><strong>${state.code}</strong><button class="secondary" data-copy>Copy invite →</button></div><p class="subtle">${location.hash.includes('seat=') ? 'Keep this preview open to hold your seat. Refreshing the containing page may reset it.' : 'Keep this tab to hold your seat. Refreshing will reconnect you.'}</p><button class="secondary lobby-return" data-lobby ${pending ? 'disabled' : ''}>Back to lobby</button></div>
     <section class="lobby-panel"><div class="panel-heading"><h2>Around the table</h2><span class="pill">${state.players.length} / ${state.playerCount} seated</span></div><div class="lobby-count"><span class="eyebrow">TABLE SIZE</span><div class="size-options">${[2, 3, 4, 5].map(n => `<button data-size="${n}" class="size-option ${n === state.playerCount ? 'selected' : ''}" ${!state.isHost || n < state.players.length || pending || !connected ? 'disabled' : ''} aria-label="Set table to ${n} players" aria-pressed="${n === state.playerCount}">${n}</button>`).join('')}</div></div><div class="lobby-seats">${Array.from({ length: state.playerCount }, (_, i) => {
       const player = state.players[i];
       return `<div class="lobby-seat ${player ? '' : 'empty'}"><span class="avatar">${player ? escape(player.name.slice(0, 1).toUpperCase()) : '✧'}</span><div><strong>${player ? escape(player.name) : 'An open seat'}</strong><small>${player ? `${i === state.you ? 'You · ' : ''}${i === 0 ? 'Host' : 'Ready to play'}` : 'Waiting for a friend…'}</small></div><span class="seat-check">${player ? '✓' : '—'}</span></div>`;
@@ -196,7 +245,7 @@ function game() {
     const lead = state.trick[0]?.card.color;
     subtitle = state.blindRound ? `Your card stays face down until you play it. ${names[state.trump]} is trump.` : lead ? `Follow ${names[lead]} if you have it. ${names[state.trump]} is trump.` : `${myTurn ? 'Choose a color to lead.' : 'Waiting for the first card.'} ${names[state.trump]} is trump.`;
   }
-  app.innerHTML = `<section class="game-view"><div class="game-top"><div><span class="eyebrow">ROOM ${state.code}</span><h2>Round ${state.round}<span class="round-total"> / 10</span></h2></div><div class="game-meta"><span class="trump-chip" data-color="${state.trump}"><span>${symbols[state.trump]}</span><span><small>TRUMP COLOR</small>${names[state.trump]}</span></span><button class="text-button" data-copy>Invite →</button>${state.isHost ? `<button class="secondary lobby-return" data-lobby ${pending || !connected ? 'disabled' : ''}>Back to lobby</button>` : ''}</div></div>
+  app.innerHTML = `<section class="game-view"><div class="game-top"><div><span class="eyebrow">ROOM ${state.code}</span><h2>Round ${state.round}<span class="round-total"> / 10</span></h2></div><div class="game-meta"><span class="trump-chip" data-color="${state.trump}"><span>${symbols[state.trump]}</span><span><small>TRUMP COLOR</small>${names[state.trump]}</span></span><button class="text-button" data-copy>Invite →</button><button class="secondary lobby-return" data-lobby ${pending ? 'disabled' : ''}>Back to lobby</button></div></div>
     <div class="game-headline"><h3>${title}</h3><p>${subtitle}</p></div>
     ${isSummary ? summary() : `${state.blindRound ? blindReadout() : ''}<div class="play-layout"><div class="table-wrap"><div class="card-table" data-count="${state.playerCount}"><span class="table-watermark">✦<small>WIZARDS</small></span>
       ${state.players.map((_, index) => seatMarkup(index)).join('')}
@@ -224,7 +273,7 @@ function render() {
   app.dataset.pending = String(pending);
   if (state.phase === 'lobby') lobby(); else game();
   document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', copyInvite));
-  document.querySelectorAll('[data-lobby]').forEach(button => button.addEventListener('click', () => document.querySelector('#lobby-dialog').showModal()));
+  document.querySelectorAll('[data-lobby]').forEach(button => button.addEventListener('click', backToLobby));
   document.querySelectorAll('[data-action]').forEach(button => button.addEventListener('click', () => action({ type: button.dataset.action })));
   document.querySelectorAll('[data-bid]').forEach(button => button.addEventListener('click', () => action({ type: 'bid', value: Number(button.dataset.bid) })));
   document.querySelectorAll('[data-size]').forEach(button => button.addEventListener('click', () => action({ type: 'set-player-count', value: Number(button.dataset.size) })));
@@ -233,16 +282,21 @@ function render() {
 
 document.querySelector('#rules-open').addEventListener('click', () => document.querySelector('#rules-dialog').showModal());
 document.querySelector('#rules-close').addEventListener('click', () => document.querySelector('#rules-dialog').close());
-document.querySelector('#lobby-cancel').addEventListener('click', () => document.querySelector('#lobby-dialog').close());
-document.querySelector('#lobby-confirm').addEventListener('click', () => {
-  document.querySelector('#lobby-dialog').close();
-  action({ type: 'return-to-lobby' });
+document.querySelector('.brand').addEventListener('click', event => {
+  if (!seat) return;
+  event.preventDefault();
+  backToLobby();
 });
 
 async function initialize() {
   try {
     const stored = savedSeat();
     const requestedCode = new URLSearchParams(location.search).get('room');
+    seat = stored;
+    if (new URLSearchParams(location.search).get('lobby') === '1') {
+      landing();
+      return;
+    }
     if (stored?.code && stored?.token && (!requestedCode || requestedCode.toUpperCase() === stored.code)) {
       seat = stored;
       state = await request(`/api/rooms/${seat.code}/state`);

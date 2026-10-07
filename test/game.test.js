@@ -90,49 +90,6 @@ test('private views expose only the requester’s cards, with no tokens or playe
   assert.throws(() => viewFor(room, 'stranger'), /not seated/);
 });
 
-test('host can return an active table to its lobby, keep seats, and start a fresh blind game', () => {
-  const { room, host } = fixture(2);
-  const identities = room.players.map(({ id, token, name }) => ({ id, token, name }));
-  assert.throws(() => applyAction(room, host.id, { type: 'return-to-lobby' }), /already in the lobby/);
-  applyAction(room, host.id, { type: 'start' });
-  for (const player of room.players) applyAction(room, player.id, { type: 'bid', value: 0 });
-  for (let i = 0; i < 2; i++) applyAction(room, room.players[room.turn].id, { type: 'play-blind' });
-  finishTrick(room);
-  assert.equal(room.history.length, 1);
-  assert.ok(room.players.some(player => player.score !== 0));
-  applyAction(room, host.id, { type: 'next-round' });
-  for (let i = 0; i < 2; i++) applyAction(room, room.players[room.turn].id, { type: 'bid', value: 0 });
-  const leader = room.turn;
-  applyAction(room, room.players[leader].id, { type: 'play', cardId: room.players[leader].hand[0].id });
-  const before = structuredClone(room);
-  assert.throws(() => applyAction(room, room.players[1].id, { type: 'return-to-lobby' }), /Only the host/);
-  assert.deepEqual(room, before, 'a guest cannot erase the game');
-  applyAction(room, host.id, { type: 'return-to-lobby' });
-  assert.equal(room.phase, 'lobby');
-  assert.equal(room.code, 'ABC234');
-  assert.equal(room.playerCount, 2);
-  assert.equal(room.round, 0);
-  assert.equal(room.turn, null);
-  assert.equal(room.trump, null);
-  assert.equal(room.lastTrick, null);
-  assert.deepEqual(room.trick, []);
-  assert.deepEqual(room.history, []);
-  assert.equal(room.revision, before.revision + 1);
-  assert.deepEqual(room.players.map(({ id, token, name }) => ({ id, token, name })), identities);
-  for (const player of room.players) {
-    assert.deepEqual(player.hand, []);
-    assert.equal(player.prediction, null);
-    assert.equal(player.tricks, 0);
-    assert.equal(player.score, 0);
-  }
-  applyAction(room, host.id, { type: 'set-player-count', value: 3 });
-  addPlayer(room, 'Cleo');
-  applyAction(room, host.id, { type: 'start' });
-  assert.equal(room.round, 1);
-  assert.equal(room.first, 0);
-  assert.deepEqual(viewFor(room, host.id).hand, [{ hidden: true }]);
-});
-
 for (const count of [2, 3, 4, 5]) test(`a complete ${count}-player ten-round game deals, rotates, scores, and rematches`, () => {
   const { room, host } = fixture(count);
   let seed = 371;

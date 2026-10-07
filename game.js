@@ -92,24 +92,6 @@ export function applyAction(room, playerId, action, random = randomInt) {
     if (room.phase !== 'lobby') throw new Error('The game has already started.');
     if (room.players.length !== room.playerCount) throw new Error(`All ${room.playerCount} players must join before the game starts.`);
     dealRound(room, random);
-  } else if (action.type === 'return-to-lobby') {
-    if (playerId !== room.host) throw new Error('Only the host can return the table to the lobby.');
-    if (room.phase === 'lobby') throw new Error('The table is already in the lobby.');
-    room.phase = 'lobby';
-    room.round = 0;
-    room.first = 0;
-    room.turn = null;
-    room.trump = null;
-    room.trick = [];
-    room.lastTrick = null;
-    room.history = [];
-    room.message = 'The host returned the table to the lobby.';
-    for (const seated of room.players) {
-      seated.hand = [];
-      seated.prediction = null;
-      seated.tricks = 0;
-      seated.score = 0;
-    }
   } else if (action.type === 'bid') {
     if (room.phase !== 'bidding' || room.turn !== index) throw new Error('Wait for your prediction turn.');
     const bid = action.value;

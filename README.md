@@ -36,7 +36,7 @@ Run one instance: rooms currently live in that process's memory. Free hosting ca
 ## Rules
 
 - Choose 2–5 players when creating a room (default four); the host can resize the lobby before starting without removing joined players. There are 75 distinct cards: values 1–15 in red, gold, green, blue, and purple.
-- The host can use **Back to lobby** during or after a game. Confirming clears the current cards and scores for everyone, keeps the same room code and seats, and lets the host change the table size or deal a fresh game.
+- **Back to lobby** takes any player to the opening page with the name, Create a room, and Join room fields. Their existing seat is saved, and **Return to game** resumes that table. Reloading the opening page keeps it open. The Wizards logo also opens this page.
 - Ten rounds. Each player receives as many cards as the round number. The deck is freshly shuffled each round. Trump is chosen randomly and can repeat across rounds.
 - In round 1, your own card is face down until played and everyone else’s unplayed card is visible. Your card ID, color, and value are not sent to your browser before play. Predict and then play the single hidden card using the blind-play button. Normal private hands return in round 2.
 - Players predict tricks in seat order. The first predictor rotates one seat each round, starting with the host in round 1.
@@ -55,7 +55,7 @@ npm run test:browser
 
 `npm test` runs the game engine and HTTP/SSE integration tests, including a full ten-round game at every size from 2–5 players, forced color, trump, scoring, lobby resizing, authentication, and blind-card privacy.
 
-`npm run test:browser` starts an isolated server on a temporary port. It first checks that a sandboxed cross-site embedded preview can load the game, create a room, receive live updates, and reconnect. It then runs the blind first round and normal second round at every table size, plus full ten-round games at both two and five players through independent Chromium sessions, including a mobile viewport and reload recovery. It closes the test server afterward. It uses system Chromium when available; set `CHROMIUM_PATH` to another executable, or install Playwright's Chromium with `npx playwright install chromium`. It writes screenshots to `/tmp/wizards-*.png`.
+`npm run test:browser` starts an isolated server on a temporary port. It checks returning to the opening page and resuming the original seat, including reloads and a sandboxed cross-site embedded preview. It then runs the blind first round and normal second round at every table size, plus full ten-round games at both two and five players through independent Chromium sessions, including a mobile viewport. It deliberately delays trick-completion responses to verify they cannot overwrite a newer live turn. It closes the test server afterward. It uses system Chromium when available; set `CHROMIUM_PATH` to another executable, or install Playwright's Chromium with `npx playwright install chromium`. It writes screenshots to `/tmp/wizards-*.png`.
 
 For a running server, `/health` reports readiness. A useful functional check is to open 2–5 tabs, create/join the same room, predict, play a trick, and verify all scoreboards agree.
 
