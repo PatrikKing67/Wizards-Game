@@ -39,7 +39,10 @@ test('HTTP flow: four seats, authentication, private hands, authority, and a com
   assert.equal((await api(`/api/rooms/${code}/actions`, { type: 'start' }, players[0].token)).status, 200);
   for (const player of players) {
     const view = (await api(`/api/rooms/${code}/state`, undefined, player.token)).data;
-    assert.equal(view.hand.length, 1);
+    assert.deepEqual(view.hand, [{ hidden: true }]);
+    assert.deepEqual(view.legalCardIds, []);
+    assert.equal(view.players[view.you].visibleCard, null);
+    assert.equal(view.players.filter(p => p.visibleCard).length, 3);
     assert.equal(view.players.some(p => 'hand' in p || 'token' in p), false);
   }
   for (const player of players) assert.equal((await api(`/api/rooms/${code}/actions`, { type: 'bid', value: 0 }, player.token)).status, 200);
@@ -47,7 +50,7 @@ test('HTTP flow: four seats, authentication, private hands, authority, and a com
   for (let i = 0; i < 4; i++) {
     const player = players[state.turn];
     const privateState = (await api(`/api/rooms/${code}/state`, undefined, player.token)).data;
-    const result = await api(`/api/rooms/${code}/actions`, { type: 'play', cardId: privateState.legalCardIds[0] }, player.token);
+    const result = await api(`/api/rooms/${code}/actions`, { type: 'play-blind' }, player.token);
     assert.equal(result.status, 200);
     state = result.data;
   }
@@ -82,4 +85,19 @@ test('SSE sends personalized updates to connected browsers', async t => {
   assert.equal(joined.you, 0);
   assert.equal(joined.players[1].name, 'Ben');
   controller.abort();
+});
+
+
+test('HTTP room creation validates 2–5 players and broadcasts a host’s lobby size changes', async t => {
+  const { api } = await running(t);
+  for (const playerCount of [1, 6, 7, 2.5, '6', null]) assert.equal((await api('/api/rooms', { name: 'Ada', playerCount })).status, 400);
+  for (const playerCount of [2, 3, 4, 5]) {
+    const { data: host } = await api('/api/rooms', { name: 'Ada', playerCount });
+    assert.equal(host.state.playerCount, playerCount);
+    const { data: guest } = await api(`/api/rooms/${host.code}/join`, { name: 'Ben' });
+    assert.equal((await api(`/api/rooms/${host.code}/actions`, { type: 'set-player-count', value: 5 }, guest.token)).status, 400);
+    const resized = await api(`/api/rooms/${host.code}/actions`, { type: 'set-player-count', value: 5 }, host.token);
+    assert.equal(resized.status, 200);
+    assert.equal((await api(`/api/rooms/${host.code}/state`, undefined, guest.token)).data.playerCount, 5);
+  }
 });

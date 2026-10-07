@@ -4,7 +4,7 @@ import { randomInt } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { createRoom, addPlayer, applyAction, finishTrick, viewFor } from './game.js';
 
-const files = { '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'] };
+const files = { '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/card-art.js': ['card-art.js', 'text/javascript'], '/state.js': ['state.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'] };
 const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 export function createGameServer({ trickDelay = 2200 } = {}) {
@@ -48,10 +48,10 @@ export function createGameServer({ trickDelay = 2200 } = {}) {
       }
       if (req.method === 'POST' && url.pathname === '/api/rooms') {
         if (rooms.size >= 500) return reply(res, 503, { error: 'The game server is full. Please try again later.' });
-        const { name } = await body(req);
+        const { name, playerCount } = await body(req);
         let code;
         do { code = Array.from({ length: 6 }, () => alphabet[randomInt(alphabet.length)]).join(''); } while (rooms.has(code));
-        const { room, player } = createRoom(code, name);
+        const { room, player } = createRoom(code, name, playerCount);
         rooms.set(code, room);
         return reply(res, 201, { code, token: player.token, state: viewFor(room, player.id) });
       }

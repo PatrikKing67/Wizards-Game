@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "A four-player browser card game of predictions and tricks.",
+  "description": "A 2–5-player browser card game of predictions and tricks.",
   "engines": {
     "node": ">=22"
   },

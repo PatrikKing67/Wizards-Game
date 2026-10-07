@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#101c20">
-  <meta name="description" content="Four wizards. Ten rounds. Predict your tricks and play your hand.">
+  <meta name="description" content="Two to five wizards. Ten rounds. Predict your tricks and play your hand.">
   <title>Wizards — Call your fate</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/style.css">
@@ -13,7 +13,7 @@
 <body>
   <header class="site-header">
     <a href="/" class="brand" aria-label="Wizards home"><span class="brand-mark">✦</span> WIZARDS<span class="brand-small">THE CARD GAME</span></a>
-    <div class="header-right"><span class="edition">FOUR PLAYERS · TEN ROUNDS</span><span id="connection" class="connection" role="status">Ready to play</span></div>
+    <div class="header-right"><span class="edition">2–5 PLAYERS · TEN ROUNDS</span><span id="connection" class="connection" role="status">Ready to play</span></div>
   </header>
   <div id="notice" role="status" aria-live="polite"></div>
   <main id="app"></main>
@@ -22,8 +22,9 @@
     <div class="dialog-header"><span class="eyebrow">THE RULES</span><button id="rules-close" class="icon-button" aria-label="Close rules">×</button></div>
     <h2 id="rules-title">Play the hand.<br>Predict the outcome.</h2>
     <ol class="rules-list">
-      <li><strong>Gather four players.</strong> The deck has 75 cards: numbers 1–15 in five colors.</li>
+      <li><strong>Gather 2–5 players.</strong> The deck has 75 cards: numbers 1–15 in five colors.</li>
       <li><strong>Ten rounds, growing hands.</strong> You receive one card in round 1, two in round 2, and so on. A random color is trump each round.</li>
+      <li><strong>Start blind.</strong> In round 1, your card stays face down until you play it. You can see everyone else’s card while predicting, but they see yours. From round 2 on, only your own hand is visible.</li>
       <li><strong>Make your prediction.</strong> In turn, predict how many tricks you will win. The total predictions cannot equal the round number, so the last predictor may have one forbidden choice. The first predictor rotates each round and leads the first trick.</li>
       <li><strong>Follow the first color.</strong> If you have that color, you must play it. Otherwise, play anything. The highest trump wins; without trump, the highest card in the first color wins. The winner leads the next trick.</li>
       <li><strong>Accuracy pays.</strong> An exact prediction earns 20 points plus 10 per trick won. A miss loses 10 points per trick of difference. Highest total after ten rounds wins; equal totals share the win.</li>
